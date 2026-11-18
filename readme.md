@@ -4,6 +4,24 @@ An autonomous, agentic AI system for college admissions, built with **Flask**, *
 
 ---
 
+## 📸 Demo & Screenshots
+
+<p align="center">
+  <img src="SS/SS_1.png" alt="Admission Agent - User Registration Modal" width="90%">
+  <br>
+  <em>1. Welcome modal collecting student contact details before initiating chat</em>
+</p>
+
+<br>
+
+<p align="center">
+  <img src="SS/SS_2.png" alt="Admission Agent - Interactive Chat UI" width="90%">
+  <br>
+  <em>2. Live RAG Q&A grounded in prospectus and multi-turn Calendly appointment booking</em>
+</p>
+
+---
+
 ## ✨ Features
 
 - ⚡ **100% Free LLM via Groq** — Powered by Meta Llama 3.3 (70B) or Llama 3.1 (8B) via Groq's high-speed free tier.
@@ -60,6 +78,9 @@ Autonomous-Agentic-RAG-Scheduling-System/
 ├── Knowledge/
 │   ├── Prospectus.docx          # College prospectus (RAG knowledge base source)
 │   └── Leads.csv                # Auto-generated lead capture database
+├── SS/
+│   ├── SS_1.png                 # Welcome & user registration modal
+│   └── SS_2.png                 # Live RAG Q&A & appointment scheduling chat
 ├── templates/
 │   └── admission_agent.html     # Responsive web chat interface
 ├── app.py                       # Flask application entry point & session manager
