@@ -1,14 +1,15 @@
 # 🎓 Autonomous Agentic RAG Scheduling System
 
-An autonomous, agentic AI system for college admissions, built with **Flask**, **LangGraph**, **ChromaDB**, and **OpenAI GPT-4o**. It answers prospectus-based queries via RAG, schedules counselling calls via Calendly, and captures leads automatically.
+An autonomous, agentic AI system for college admissions, built with **Flask**, **LangGraph**, **Groq (Meta Llama 3.3 70B)**, and **Calendly**. It answers prospectus-based queries via RAG, schedules counselling calls via Calendly, and captures leads automatically — **100% free with zero API costs**.
 
 ---
 
 ## ✨ Features
 
-- 🤖 **RAG-powered Q&A** — Answers admission queries grounded in the college prospectus (PDF/DOCX) using persistent ChromaDB vector storage.
-- 📅 **Calendly Scheduling** — Books counselling calls via multi-turn slot-filling (Name → Email → Date & Time).
-- 🧠 **Intent Detection** — Classifies each message as a general college query (RAG) or an appointment booking request (Calendly).
+- ⚡ **100% Free LLM via Groq** — Powered by Meta Llama 3.3 (70B) or Llama 3.1 (8B) via Groq's high-speed free tier.
+- 🤖 **Fast Local RAG Q&A** — Instant, offline similarity search grounded in the college prospectus (PDF/DOCX) with zero external embedding fees.
+- 📅 **Calendly Scheduling** — Books counselling calls via multi-turn slot-filling (Name → Email → Date & Time) verified against live Calendly availability.
+- 🧠 **Intent Detection** — Accurately routes user messages between admission inquiries (RAG) and appointment booking (Calendly).
 - 📊 **Lead Generation & Scoring** — Automatically scores user intent (0–100) and saves contact leads to CSV on session completion.
 - 💬 **Conversation Memory** — Server-side session tracking across multi-turn interactions.
 - ⏱️ **Inactivity Timeout** — Auto-triggers lead capture after inactivity.
@@ -22,11 +23,11 @@ An autonomous, agentic AI system for college admissions, built with **Flask**, *
 User Message
      │
      ▼
-Intent Detection (GPT-4o / Heuristic Fallback)
+Intent Detection (Llama 3.3 / Heuristic Fallback)
      │
      ├──► "instruction" ──► Scheduler Node (multi-turn slot fill) ──► Calendly API
      │
-     └──► "prompt"      ──► RAG Node (ChromaDB + GPT-4o)          ──► Answer
+     └──► "prompt"      ──► RAG Node (Local Vector Index + Llama 3.3) ──► Answer
                                    │
                                    ▼
                          Lead Gen Node (on session end)
@@ -40,9 +41,9 @@ Intent Detection (GPT-4o / Heuristic Fallback)
 | Layer | Technology |
 |---|---|
 | Web Framework | Flask + Flask-Session |
-| LLM & Embeddings | OpenAI GPT-4o / `text-embedding-3-small` |
+| LLM | Groq API (Meta Llama 3.3 70B / Llama 3.1 8B) — Free |
+| Vector Index & RAG | Scikit-learn Cosine Similarity / ChromaDB — Local & Free |
 | Agent Orchestration | LangGraph |
-| Vector Database | ChromaDB (Persistent) |
 | Scheduling Integration | Calendly REST API |
 | Document Extraction | python-docx, PyPDF2 |
 | Environment | Python 3.12+ |
@@ -64,7 +65,7 @@ Autonomous-Agentic-RAG-Scheduling-System/
 ├── app.py                       # Flask application entry point & session manager
 ├── main.py                      # RAG initialization & admission inquiry service
 ├── graph.py                     # LangGraph state machines (RAG, Scheduler, Lead Gen)
-├── tools.py                     # Document processing, ChromaDB, OpenAI client, Lead CSV
+├── tools.py                     # Document processing, Groq client, Local Vector Index, Lead CSV
 ├── calendly_tool.py             # Calendly availability check & booking creation
 ├── test.py                      # Utility script to test Calendly credentials & event types
 ├── requirements.txt             # Python project dependencies
@@ -106,24 +107,30 @@ pip install -r requirements.txt
 
 ### 4. Configure Environment Variables
 
-Create your `.env` file from `.env.example`:
+Create your `.env` file:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and configure your API keys:
+Open `.env` and paste your free Groq and Calendly keys:
 
 ```env
-OPENAI_API_KEY=sk-proj-your-openai-api-key-here
-CALENDLY_TOKEN=your-calendly-personal-access-token-here
-CALENDLY_EVENT_TYPE_URI=https://api.calendly.com/event_types/your-event-type-id
+# Free LLM via Groq (No credit card needed)
+GROQ_API_KEY=gsk_your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Calendly Configuration
+CALENDLY_TOKEN=your_calendly_personal_access_token_here
+CALENDLY_EVENT_TYPE_URI=https://api.calendly.com/event_types/your_event_type_id
+
+# Flask Configuration
 SECRET_KEY=super-secret-key-nit-surat-agent
 PORT=5000
 ```
 
 > 💡 **Where to get keys:**
-> - **OpenAI API Key**: [OpenAI Platform](https://platform.openai.com/api-keys)
+> - **Groq API Key (100% Free)**: [Groq Console](https://console.groq.com)
 > - **Calendly Token**: [Calendly Integrations / API](https://calendly.com/integrations/api_webhooks)
 
 ---
@@ -189,7 +196,7 @@ When a user requests a call or counselling session:
 
 ## 📊 Lead Scoring & Storage
 
-Leads are scored from 0–100 by GPT-4o based on commitment level and saved to `Knowledge/Leads.csv`:
+Leads are scored from 0–100 by Llama 3.3 based on commitment level and saved to `Knowledge/Leads.csv`:
 
 | Score Range | Intent Level | Example Inquiries |
 |---|---|---|

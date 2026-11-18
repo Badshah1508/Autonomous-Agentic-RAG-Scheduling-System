@@ -9,7 +9,7 @@ load_dotenv()
 
 from main import admission_enquiry
 from graph import lead_gen_node, scheduler_node
-from tools import get_openai_client
+from tools import get_llm_client
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(base_dir, "templates")
@@ -43,25 +43,25 @@ def detect_intent(user_message: str) -> str:
     - 'instruction' for scheduling requests (Calendly)
     - 'prompt' for general queries (RAG)
     """
-    client = get_openai_client()
+    client, model, provider = get_llm_client()
     if client:
         try:
             prompt = f"""
-Decide if the user's message is asking to schedule an appointment/call/counselling session or a general college query.
+Decide if the user's message is asking to schedule an appointment/call/counselling session or a general college enquiry.
 Respond with only one word: 'instruction' if user wants to schedule an appointment,
 or 'prompt' if it's a general question.
 User message: "{user_message}"
-Answer with only one word.
+Answer with only one word:
 """
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0
             )
             word = response.choices[0].message.content.strip().lower()
             return "instruction" if "instruction" in word else "prompt"
         except Exception as e:
-            print(f"[DEBUG] OpenAI intent detection fallback: {e}")
+            print(f"[DEBUG] {provider} intent detection fallback: {e}")
 
     # Heuristic fallback if LLM is unavailable or unconfigured
     msg_lower = user_message.lower()

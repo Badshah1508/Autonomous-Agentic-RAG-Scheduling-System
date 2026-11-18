@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pytz
 import dateparser
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from langgraph.graph import StateGraph, START, END
 from tools import (
@@ -17,8 +16,8 @@ from tools import (
     store_embeddings_in_chromadb,
     rag_search,
     lead_gen,
-    generate_with_gpt,
-    get_openai_client
+    generate_with_llm,
+    get_llm_client
 )
 from calendly_tool import schedule_calendly_meeting
 
@@ -55,10 +54,10 @@ class SchedulerSlots(TypedDict, total=False):
 
 def extract_slots_llm(user_input: str) -> SchedulerSlots:
     """
-    Uses GPT-4o to extract name, email, start_time from natural language.
+    Uses LLM (Groq / Llama 3.3 or OpenAI) to extract name, email, start_time from natural language.
     Returns a SchedulerSlots dict with extracted values or empty if missing.
     """
-    client = get_openai_client()
+    client, model, _ = get_llm_client()
     if not client:
         return SchedulerSlots()
 
@@ -75,13 +74,12 @@ User message: "{user_input}"
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
         import json
         raw_content = response.choices[0].message.content.strip()
-        # Clean markdown fences if any
         if raw_content.startswith("```"):
             raw_content = re.sub(r"^```(?:json)?\n?|\n?```$", "", raw_content, flags=re.MULTILINE).strip()
         data = json.loads(raw_content)
@@ -91,7 +89,7 @@ User message: "{user_input}"
             start_time=data.get("start_time")
         )
     except Exception as e:
-        print(f"[DEBUG] LLM slot extraction exception: {e}")
+        print(f"[DEBUG] LLM slot extraction error: {e}")
         return SchedulerSlots()
 
 
@@ -110,7 +108,6 @@ def parse_start_time(text: str):
     elif "today" in text:
         base_date = now_ist
     else:
-        # Try dateparser
         parsed = dateparser.parse(
             text,
             settings={'RELATIVE_BASE': now_ist, 'TIMEZONE': 'Asia/Kolkata', 'RETURN_AS_TIMEZONE_AWARE': True}
@@ -221,7 +218,7 @@ def scheduler_node(
     print("[LOG] Calling Calendly tool...")
     event_type_uri = os.getenv(
         "CALENDLY_EVENT_TYPE_URI",
-        "https://api.calendly.com/event_types/3677b0d0-1e8d-458e-98ea-575bb00c1cb0"
+        "https://api.calendly.com/event_types/ea8fa002-f469-4a32-baa1-c0b954ba5115"
     )
 
     result = schedule_calendly_meeting(
@@ -312,7 +309,7 @@ Return ONLY a single integer between 0 and 100. Do not include any text, explana
 USER CONVERSATION TO SCORE:
 {queries_text}
 """
-    lead_score_str = generate_with_gpt(prompt)
+    lead_score_str = generate_with_llm(prompt)
     score_match = re.search(r'\b\d{1,3}\b', str(lead_score_str))
     score = int(score_match.group(0)) if score_match else 50
     score = max(0, min(100, score))

@@ -1,29 +1,72 @@
 import os
 import json
 from threading import Lock
+import numpy as np
 import pandas as pd
 from docx import Document
 from PyPDF2 import PdfReader
-import chromadb
-from chromadb import PersistentClient
-from openai import OpenAI
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
 load_dotenv()
 
 file_lock = Lock()
 
-def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key or api_key in ("API-KEY", "API_KEY", "your_openai_api_key_here"):
-        return None
-    return OpenAI(api_key=api_key)
 
-# Initialize ChromaDB client (persistent)
-db_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chroma_db")
-os.makedirs(db_dir, exist_ok=True)
-chroma_client = PersistentClient(path=db_dir)
-collection = chroma_client.get_or_create_collection("my_collection")
+class LocalVectorStore:
+    """Fast, 100% free, local vector store for prospectus retrieval."""
+    def __init__(self):
+        self.chunks = []
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.tfidf_matrix = None
+
+    def add_documents(self, chunks):
+        if not chunks:
+            return
+        self.chunks = chunks
+        self.tfidf_matrix = self.vectorizer.fit_transform(chunks)
+        print(f"[INFO] Indexed {len(chunks)} prospectus chunks in local vector store.")
+
+    def similarity_search(self, query: str, top_k: int = 3):
+        if not self.chunks or self.tfidf_matrix is None:
+            return []
+        try:
+            query_vec = self.vectorizer.transform([query])
+            scores = cosine_similarity(query_vec, self.tfidf_matrix).flatten()
+            top_indices = np.argsort(scores)[::-1][:top_k]
+            matched = [self.chunks[i] for i in top_indices if scores[i] > 0.0]
+            return matched if matched else self.chunks[:top_k]
+        except Exception as e:
+            print(f"[DEBUG] Local vector search error: {e}")
+            return self.chunks[:top_k]
+
+
+local_store = LocalVectorStore()
+
+
+def get_llm_client():
+    """
+    Returns Groq client if GROQ_API_KEY is configured.
+    Falls back to OpenAI client if OPENAI_API_KEY is available.
+    """
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    if groq_key and groq_key not in ("your_groq_api_key_here", "gsk_..."):
+        try:
+            from groq import Groq
+            return Groq(api_key=groq_key), os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), "groq"
+        except ImportError:
+            print("[WARNING] groq package not installed. Run: pip install groq")
+
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key and openai_key not in ("your_openai_api_key_here", "API-KEY", "API_KEY"):
+        try:
+            from openai import OpenAI
+            return OpenAI(api_key=openai_key), "gpt-4o", "openai"
+        except ImportError:
+            pass
+
+    return None, None, None
 
 
 # Step 1: Extract text from PDF
@@ -71,89 +114,54 @@ def chunk_text(text, chunk_size=1000):
 
 
 def store_embeddings_in_chromadb(chunks):
+    """Indexes chunks in local vector store (instant, offline & free)."""
     if not chunks:
         print("[INFO] No text chunks to store.")
         return
+    local_store.add_documents(chunks)
 
-    client = get_openai_client()
+
+def generate_with_llm(prompt: str) -> str:
+    """Generates response using Groq (Llama 3.3) or OpenAI."""
+    client, model, provider = get_llm_client()
     if not client:
-        print("[WARNING] OPENAI_API_KEY is not set. Skipping embedding generation.")
-        return
-
-    try:
-        for i, chunk in enumerate(chunks):
-            emb = client.embeddings.create(
-                model="text-embedding-3-small",
-                input=chunk
-            ).data[0].embedding
-
-            collection.upsert(
-                ids=[f"chunk_{i}"],
-                documents=[chunk],
-                embeddings=[emb]
-            )
-
-        print(f" Stored {len(chunks)} chunks in ChromaDB.")
-    except Exception as e:
-        print(f"[ERROR] Error storing embeddings in ChromaDB: {e}")
-
-
-def generate_with_gpt(prompt):
-    client = get_openai_client()
-    if not client:
-        return "OpenAI API key is missing. Please configure OPENAI_API_KEY in your .env file."
+        return "⚠️ LLM API key missing. Please add your free GROQ_API_KEY to your .env file."
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        # Fallback to streaming if requested
-        try:
-            full_response = ""
-            with client.responses.stream(
-                model="gpt-4o",
-                input=[{"role": "user", "content": prompt}]
-            ) as stream:
-                for event in stream:
-                    if event.type == "response.output_text.delta":
-                        full_response += event.delta
-            return full_response
-        except Exception:
-            return f"Error communicating with OpenAI: {str(e)}"
+        return f"Error communicating with {provider} ({model}): {str(e)}"
 
 
-def rag_search(query):
-    client = get_openai_client()
+# Alias for backward compatibility
+generate_with_gpt = generate_with_llm
+
+
+def rag_search(query: str) -> str:
+    """Retrieves relevant prospectus chunks and queries Groq/Llama."""
+    matched_chunks = local_store.similarity_search(query, top_k=3)
+    if matched_chunks:
+        context = "\n\n".join(matched_chunks)
+    else:
+        # Fallback: read prospectus directly
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        doc_path = os.path.join(base_dir, "Knowledge", "Prospectus.docx")
+        context = extract_text_from_docx(doc_path) or "Sardar Vallabhbhai National Institute of Technology (SVNIT / NIT Surat)"
+
+    client, model, provider = get_llm_client()
     if not client:
-        return "OpenAI API key is not configured. Please add OPENAI_API_KEY to your .env file."
+        return "⚠️ GROQ_API_KEY is not configured in .env. Please set GROQ_API_KEY to get AI answers."
 
-    try:
-        # Get embedding of query
-        query_emb = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=query
-        ).data[0].embedding
-
-        # Similar chunks
-        results = collection.query(
-            query_embeddings=[query_emb],
-            n_results=3
-        )
-
-        docs = results.get("documents", [[]])
-        if docs and len(docs[0]) > 0:
-            context = "\n\n".join(docs[0])
-        else:
-            context = "No prospectus document chunks available."
-
-        prompt = f"""
+    prompt = f"""
 You are the helpful admission assistant for Sardar Vallabhbhai National Institute of Technology (SVNIT / NIT Surat).
-You should politely answer queries related to the college, courses, admissions, eligibility, fees, facilities, and campus life using the context below.
-If a question is completely unrelated to college admissions or NIT Surat, gently steer the user back to admission-related topics.
+Answer the user's questions clearly and accurately based on the college prospectus context below.
+Provide specific details regarding eligibility, branches, fees, placements, and campus amenities whenever asked.
+If a question is completely unrelated to college or education, politely invite them to ask about NIT Surat admissions.
 
 Context:
 {context}
@@ -162,10 +170,7 @@ Question: {query}
 
 Answer:
 """
-        response = generate_with_gpt(prompt)
-        return response
-    except Exception as e:
-        return f"Error retrieving admission information: {str(e)}"
+    return generate_with_llm(prompt)
 
 
 def lead_gen(name: str, mob: int, lead_score: int):
@@ -191,7 +196,7 @@ def lead_gen(name: str, mob: int, lead_score: int):
 if __name__ == "__main__":
     base_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(base_dir, "Knowledge", "Prospectus.docx")
-    
+
     _, extension = os.path.splitext(file_path)
     extension = extension.lower()
 
@@ -207,4 +212,4 @@ if __name__ == "__main__":
 
     query = "What are the B.Tech programs offered at NIT Surat?"
     answer = rag_search(query)
-    print("Answer:", answer)
+    print("\nAnswer:\n", answer)

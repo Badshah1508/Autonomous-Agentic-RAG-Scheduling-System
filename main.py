@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from graph import RAGAgent, rag_app, lead_gen_node, res
-from tools import extract_text_from_docx, extract_text_from_pdf, get_openai_client
+from tools import extract_text_from_docx, extract_text_from_pdf, get_llm_client
 
 load_dotenv()
 
@@ -13,16 +13,12 @@ rag_state = {
 }
 
 def initialize_knowledge_base():
-    client = get_openai_client()
-    if client:
-        try:
-            print("[INFO] Ingesting prospectus into ChromaDB knowledge base...")
-            rag_app.invoke(rag_state)
-            print("[INFO] Knowledge base initialized successfully.")
-        except Exception as e:
-            print(f"[WARNING] Could not initialize knowledge base embeddings: {e}")
-    else:
-        print("[INFO] OPENAI_API_KEY not configured. Set OPENAI_API_KEY in .env to enable RAG.")
+    try:
+        print("[INFO] Indexing college prospectus into local vector store...")
+        rag_app.invoke(rag_state)
+        print("[INFO] Knowledge base initialized successfully.")
+    except Exception as e:
+        print(f"[WARNING] Could not initialize knowledge base: {e}")
 
 # Initialize on module import
 initialize_knowledge_base()
