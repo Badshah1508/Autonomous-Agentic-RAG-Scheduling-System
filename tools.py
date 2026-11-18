@@ -54,7 +54,7 @@ def get_llm_client():
     if groq_key and groq_key not in ("your_groq_api_key_here", "gsk_..."):
         try:
             from groq import Groq
-            return Groq(api_key=groq_key), os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), "groq"
+            return Groq(api_key=groq_key), os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), "groq"
         except ImportError:
             print("[WARNING] groq package not installed. Run: pip install groq")
 
